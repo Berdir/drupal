@@ -447,37 +447,17 @@ function file_field_widget_form(&$form, &$form_state, $field, $instance, $langco
     'description' => '',
   );
 
-  // Retrieve any values set in $form_state, as will be the case during Ajax
-  // rebuilds of this form.
-  if (isset($form_state['values'])) {
-    $path = array_merge($element['#field_parents'], array($field['field_name'], $langcode));
-    $path_exists = FALSE;
-    $values = drupal_array_get_nested_value($form_state['values'], $path, $path_exists);
-    if ($path_exists) {
-      $items = $values;
-      drupal_array_set_nested_value($form_state['values'], $path, NULL);
-    }
+  $field_state = field_form_get_state($element['#field_parents'], $field['field_name'], $langcode, $form_state);
+  if (isset($field_state['items'])) {
+    // Use items array from the field state if there is any.
+    $items = $field_state['items'];
   }
-
-  foreach ($items as $delta => $item) {
-    $items[$delta] = array_merge($defaults, $items[$delta]);
-    // Remove any items from being displayed that are not needed.
-    if ($items[$delta]['fid'] == 0) {
-      unset($items[$delta]);
-    }
-  }
-
-  // Re-index deltas after removing empty items.
-  $items = array_values($items);
-
-  // Update order according to weight.
-  $items = _field_sort_items($field, $items);
 
   // Essentially we use the managed_file type, extended with some enhancements.
   $element_info = element_info('managed_file');
   $element += array(
     '#type' => 'managed_file',
-    '#default_value' => isset($items[$delta]) ? $items[$delta] : $defaults,
+    '#default_value' => !empty($items) ? $items[0] : $defaults,
     '#upload_location' => file_field_widget_uri($field, $instance),
     '#upload_validators' => file_field_widget_upload_validators($field, $instance),
     '#value_callback' => 'file_field_widget_value',
@@ -494,16 +474,16 @@ function file_field_widget_form(&$form, &$form_state, $field, $instance, $langco
     $elements = array($element);
   }
   else {
+
     // If there are multiple values, add an element for each existing one.
-    $delta = -1;
-    foreach ($items as $delta => $item) {
+    foreach ($items as $item) {
       $elements[$delta] = $element;
       $elements[$delta]['#default_value'] = $item;
       $elements[$delta]['#weight'] = $delta;
+      $delta++;
     }
     // And then add one more empty row for new uploads.
-    $delta++;
-    if ($field['cardinality'] == FIELD_CARDINALITY_UNLIMITED || $delta < $field['cardinality']) {
+    if (($field['cardinality'] == FIELD_CARDINALITY_UNLIMITED || $delta < $field['cardinality']) && empty($form_state['programmed'])) {
       $elements[$delta] = $element;
       $elements[$delta]['#default_value'] = $defaults;
       $elements[$delta]['#weight'] = $delta;
@@ -757,6 +737,33 @@ function file_field_widget_submit($form, &$form_state) {
   // so nothing is lost in doing this.
   $parents = array_slice($form_state['triggering_element']['#parents'], 0, -2);
   drupal_array_set_nested_value($form_state['input'], $parents, NULL);
+
+  $button = $form_state['triggering_element'];
+
+  // Go one level up in the form, to the widgets container.
+  $element = drupal_array_get_nested_value($form, array_slice($button['#array_parents'], 0, -1));
+  $field_name = $element['#field_name'];
+  $langcode = $element['#language'];
+  $parents = $element['#field_parents'];
+
+  $submitted_values = drupal_array_get_nested_value($form_state['values'], array_slice($button['#array_parents'], 0, -2));
+  foreach ($submitted_values as $delta => $submitted_value) {
+    if (!$submitted_value['fid']) {
+      unset($submitted_values[$delta]);
+    }
+  }
+  $count = count($submitted_values);
+
+  // Re-index deltas after removing empty items.
+  $submitted_values = array_values($submitted_values);
+
+  // Update form_state values.
+  drupal_array_set_nested_value($form_state['values'], array_slice($button['#array_parents'], 0, -2), $submitted_values);
+
+  // Update items count.
+  $field_state = field_form_get_state($parents, $field_name, $langcode, $form_state);
+  $field_state['items'] = $submitted_values;
+  field_form_set_state($parents, $field_name, $langcode, $form_state, $field_state);
 }
 
 /**
