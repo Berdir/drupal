@@ -137,6 +137,10 @@ function cache_set($cid, $data, $bin = 'cache', $expire = CACHE_PERMANENT) {
   return _cache_get_object($bin)->set($cid, $data, $expire);
 }
 
+function cache_set_multiple($cid_prefix, $data, $bin = 'cache', $expire = CACHE_PERMANENT) {
+  return _cache_get_object($bin)->setMultiple($cid_prefix, $data, $expire);
+}
+
 /**
  * Expire data from the cache.
  *
@@ -252,7 +256,27 @@ interface DrupalCacheInterface {
    * @return
    *   An array of the items successfully returned from cache indexed by cid.
    */
-   function getMultiple(&$cids);
+  function getMultiple(&$cids);
+
+  /**
+   * Store an array as separate cache entries.
+   *
+   * @param $cid_prefix
+   *   The cache ID prefix to use for the data. The key of the array will be
+   *   appended to this.
+   * @param $data
+   *   An array of data to persist. Each array element will be stored as a
+   *   separate cache entry with the key as cid suffix.
+   * @param $expire
+   *   One of the following values:
+   *   - CACHE_PERMANENT: Indicates that the item should never be removed unless
+   *     explicitly told to using cache_clear_all() with a cache ID.
+   *   - CACHE_TEMPORARY: Indicates that the item should be removed at the next
+   *     general cache wipe.
+   *   - A Unix timestamp: Indicates that the item should be kept at least until
+   *     the given time, after which it behaves like CACHE_TEMPORARY.
+   */
+  function setMultiple($cid_prefix, $data, $expire = CACHE_PERMANENT);
 
   /**
    * Store data in the persistent cache.
@@ -408,7 +432,7 @@ class DrupalDatabaseCache implements DrupalCacheInterface {
     return $cache;
   }
 
-  function set($cid, $data, $expire = CACHE_PERMANENT) {
+  protected function prepareFields($data, $expire) {
     $fields = array(
       'serialized' => 0,
       'created' => REQUEST_TIME,
@@ -422,16 +446,34 @@ class DrupalDatabaseCache implements DrupalCacheInterface {
       $fields['data'] = $data;
       $fields['serialized'] = 0;
     }
+    return $fields;
+  }
+
+  function set($cid, $data, $expire = CACHE_PERMANENT) {
+
 
     try {
       db_merge($this->bin)
         ->key(array('cid' => $cid))
-        ->fields($fields)
+        ->fields($this->prepareFields($data, $expire))
         ->execute();
     }
     catch (Exception $e) {
       // The database may not be available, so we'll ignore cache_set requests.
     }
+  }
+
+  function setMultiple($cid_prefix, $data, $expire = CACHE_PERMANENT) {
+    $this->clear($cid_prefix, TRUE);
+
+    $insert = db_insert($this->bin)
+      ->fields(array('cid', 'serialized', 'created', 'expire', 'data'));
+    foreach ($data as $key => $data_entry) {
+      $values = $this->prepareFields($data_entry, $expire);
+      $values['cid'] = $cid_prefix . $key;
+      $insert->values($values);
+    }
+    $insert->execute();
   }
 
   function clear($cid = NULL, $wildcard = FALSE) {

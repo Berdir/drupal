@@ -2554,16 +2554,12 @@ function ip_address() {
  *   If true, the schema will be rebuilt instead of retrieved from the cache.
  */
 function drupal_get_schema($table = NULL, $rebuild = FALSE) {
-  static $schema = array();
+  static $schema = NULL;
 
   if (empty($schema) || $rebuild) {
-    // Try to load the schema from cache.
-    if (!$rebuild && $cached = cache_get('schema')) {
-      $schema = $cached->data;
-    }
-    // Otherwise, rebuild the schema cache.
-    else {
-      $schema = array();
+    // Try to load from cache, rebuild if that fails.
+    $schema = ArrayAccessCache::create('schema');
+    if ($rebuild || !$schema->load()) {
       // Load the .install files to get hook_schema.
       // On some databases this function may be called before bootstrap has
       // been completed, so we force the functions we need to load just in case.
@@ -2586,14 +2582,14 @@ function drupal_get_schema($table = NULL, $rebuild = FALSE) {
         // Set 'module' and 'name' keys for each table, and remove descriptions,
         // as they needlessly slow down cache_get() for every single request.
         _drupal_schema_initialize($current, $module);
-        $schema = array_merge($schema, $current);
+        $schema->merge($current);
       }
 
       drupal_alter('schema', $schema);
       // If the schema is empty, avoid saving it: some database engines require
       // the schema to perform queries, and this could lead to infinite loops.
       if (!empty($schema) && (drupal_get_bootstrap_phase() == DRUPAL_BOOTSTRAP_FULL)) {
-        cache_set('schema', $schema);
+        $schema->saveToCache();
       }
     }
   }

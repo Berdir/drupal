@@ -26,6 +26,9 @@ class DrupalFakeCache extends DrupalDatabaseCache implements DrupalCacheInterfac
   function set($cid, $data, $expire = CACHE_PERMANENT) {
   }
 
+  function setMultiple($cid_prefix, $data, $expire = CACHE_PERMANENT) {
+  }
+
   function clear($cid = NULL, $wildcard = FALSE) {
     // If there is a database cache, attempt to clear it whenever possible. The
     // reason for doing this is that the database cache can accumulate data

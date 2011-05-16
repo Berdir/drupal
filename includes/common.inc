@@ -7273,17 +7273,15 @@ function entity_get_info($entity_type = NULL) {
   if (!isset($drupal_static_fast)) {
     $drupal_static_fast['entity_info'] = &drupal_static(__FUNCTION__);
   }
-  $entity_info = &$drupal_static_fast['entity_info'];
+  $entity_cache = &$drupal_static_fast['entity_info'];
 
   // hook_entity_info() includes translated strings, so each language is cached
   // separately.
   $langcode = $language->language;
 
-  if (empty($entity_info)) {
-    if ($cache = cache_get("entity_info:$langcode")) {
-      $entity_info = $cache->data;
-    }
-    else {
+  if (empty($entity_cache)) {
+    $entity_cache = ArrayAccessCache::create("entity_info:$langcode");
+    if (!$entity_cache->load()) {
       $entity_info = module_invoke_all('entity_info');
       // Merge in default values.
       foreach ($entity_info as $name => $data) {
@@ -7323,15 +7321,16 @@ function entity_get_info($entity_type = NULL) {
       }
       // Let other modules alter the entity info.
       drupal_alter('entity_info', $entity_info);
-      cache_set("entity_info:$langcode", $entity_info);
+      $entity_cache->merge($entity_info);
+      $entity_cache->saveToCache();
     }
   }
 
   if (empty($entity_type)) {
-    return $entity_info;
+    return $entity_cache;
   }
-  elseif (isset($entity_info[$entity_type])) {
-    return $entity_info[$entity_type];
+  elseif (isset($entity_cache[$entity_type])) {
+    return $entity_cache[$entity_type];
   }
 }
 
